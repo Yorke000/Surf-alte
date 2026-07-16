@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>surf-feel — フィールからボードを選ぶ</title>
+<style>
+  :root {
+    --bg: #f6f4ee;
+    --ink: #1f2a2e;
+    --sub: #5c6b70;
+    --line: #d9d4c8;
+    --accent: #1d6a7a;
+    --accent-soft: #dcebee;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: 0.02em; }
+  .tagline { color: var(--sub); margin: 0 0 32px; font-size: 0.95rem; }
+
+  form, .result-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  label { display: block; font-size: 0.85rem; color: var(--sub); margin: 16px 0 4px; }
+  label:first-child { margin-top: 0; }
+  textarea, input, select {
+    width: 100%;
+    font: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ink);
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  .aux { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  @media (max-width: 520px) { .aux { grid-template-columns: 1fr; } }
+
+  button {
+    margin-top: 24px;
+    width: 100%;
+    padding: 13px;
+    font: inherit;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: wait; }
+
+  #result { margin-top: 32px; display: none; }
+  .result-card { margin-bottom: 20px; }
+  .result-card h2 {
+    font-size: 1.05rem;
+    margin: 0 0 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .axis-row { display: grid; grid-template-columns: 6.5em 1fr 3em; gap: 10px; align-items: center; margin: 8px 0; }
+  .axis-label { font-size: 0.85rem; color: var(--sub); }
+  .axis-track { display: block; height: 10px; background: var(--accent-soft); border-radius: 5px; overflow: hidden; }
+  .axis-fill { display: block; height: 100%; background: var(--accent); border-radius: 5px; width: 0; transition: width 0.6s ease; }
+  .axis-value { font-size: 0.8rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--sub); }
+
+  .board-name { font-size: 1.25rem; font-weight: 700; margin: 0 0 8px; }
+  .dims { margin: 16px 0 0; padding: 14px 16px; background: var(--bg); border-radius: 8px; font-size: 0.9rem; }
+  .dims dt { float: left; width: 8.5em; color: var(--sub); }
+  .dims dd { margin: 0 0 4px 9em; }
+  .mode-note { font-size: 0.8rem; color: var(--sub); text-align: center; margin-top: 8px; }
+  .error { color: #a33; margin-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>surf-feel</h1>
+  <p class="tagline">言語化できないフィーリングを言語化し、それに合うボードを提案する</p>
+
+  <form id="form">
+    <label for="text">波乗り体験の中で「一番気持ちよかった瞬間」を、自由に書いてください</label>
+    <textarea id="text" required
+      placeholder="例: 頭サイズの波でハイラインをただ走ってるだけで最高だった。何もしないでトリムが決まる感じ"></textarea>
+
+    <div class="aux">
+      <div>
+        <label for="weight">体重 (kg)</label>
+        <input id="weight" type="number" value="65" min="30" max="150" step="0.5">
+      </div>
+      <div>
+        <label for="skill">スキル</label>
+        <select id="skill">
+          <option value="beginner">ビギナー</option>
+          <option value="intermediate" selected>中級</option>
+          <option value="advanced">上級</option>
+        </select>
+      </div>
+      <div>
+        <label for="wave">ホームポイントの波質(任意)</label>
+        <input id="wave" type="text" placeholder="例: 腰〜頭のビーチブレイク">
+      </div>
+      <div>
+        <label for="freq">入水頻度</label>
+        <select id="freq">
+          <option value="weekly" selected>週1回以上</option>
+          <option value="monthly">月1〜2回</option>
+          <option value="rarely">それ以下</option>
+        </select>
+      </div>
+    </div>
+
+    <button id="submit" type="submit">フィールを言語化してボードを提案</button>
+    <p class="error" id="error" hidden></p>
+  </form>
+
+  <section id="result">
+    <div class="result-card">
+      <h2>あなたのフィール</h2>
+      <div id="axes"></div>
+      <p id="feel-summary"></p>
+    </div>
+
+    <div class="result-card">
+      <h2>第1候補</h2>
+      <p class="board-name" id="primary-name"></p>
+      <p id="primary-reason"></p>
+      <dl class="dims">
+        <dt>フィン</dt><dd id="fin"></dd>
+        <dt>推奨ボリューム</dt><dd id="volume"></dd>
+        <dt>長さ</dt><dd id="length"></dd>
+        <dt>幅</dt><dd id="width"></dd>
+        <dt>厚み</dt><dd id="thickness"></dd>
+      </dl>
+    </div>
+
+    <div class="result-card">
+      <h2>第2候補</h2>
+      <p class="board-name" id="secondary-name"></p>
+      <p id="secondary-reason"></p>
+    </div>
+
+    <div class="result-card">
+      <h2>使い分け</h2>
+      <p id="usage-note"></p>
+    </div>
+    <p class="mode-note" id="mode-note"></p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("submit");
+  btn.disabled = true;
+  btn.textContent = "言語化しています…";
+  $("error").hidden = true;
+
+  try {
+    const res = await fetch("/api/propose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: $("text").value,
+        weight: $("weight").value,
+        skill: $("skill").value,
+        wave: $("wave").value,
+        freq: $("freq").value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "サーバーエラー");
+    renderResult(data);
+  } catch (err) {
+    $("error").textContent = err.message;
+    $("error").hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "フィールを言語化してボードを提案";
+  }
+});
+
+function renderResult(data) {
+  const axes = $("axes");
+  axes.innerHTML = "";
+  for (const a of data.axes) {
+    const row = document.createElement("div");
+    row.className = "axis-row";
+    row.innerHTML =
+      `<span class="axis-label"></span>` +
+      `<span class="axis-track"><span class="axis-fill"></span></span>` +
+      `<span class="axis-value"></span>`;
+    row.querySelector(".axis-label").textContent = a.label;
+    row.querySelector(".axis-value").textContent = a.value.toFixed(2);
+    axes.appendChild(row);
+    requestAnimationFrame(() => {
+      row.querySelector(".axis-fill").style.width = `${a.value * 100}%`;
+    });
+  }
+
+  $("feel-summary").textContent = data.feel_summary;
+  $("primary-name").textContent = data.primary.name;
+  $("primary-reason").textContent = data.primary.reason;
+  $("fin").textContent = data.primary.fin_setup;
+  const d = data.primary.dimensions;
+  $("volume").textContent = `${d.volume_min_l}〜${d.volume_max_l} L`;
+  $("length").textContent = d.length_range;
+  $("width").textContent = d.width_range;
+  $("thickness").textContent = d.thickness_range;
+  $("secondary-name").textContent = data.secondary.name;
+  $("secondary-reason").textContent = data.secondary.reason;
+  $("usage-note").textContent = data.usage_note;
+  $("mode-note").textContent = data.offline
+    ? "オフラインモード(簡易翻訳+テンプレート生成)で実行しました"
+    : "";
+
+  $("result").style.display = "block";
+  $("result").scrollIntoView({ behavior: "smooth" });
+}
+</script>
+</body>
+</html>

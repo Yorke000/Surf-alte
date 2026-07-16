@@ -49,6 +49,15 @@ surf-feel
 surf-feel --text "テールが抜けてドリフトするのが気持ちいい" --offline
 ```
 
+### Webフォーム
+
+```bash
+surf-feel-web              # http://localhost:8765
+surf-feel-web --port 8000 --offline
+```
+
+自由記述と補助入力を1画面で受け付け、フィール6軸の可視化・第1/第2候補・使い分けまで表示する。追加依存なし(標準ライブラリのHTTPサーバー+静的HTML)。
+
 出力: フィール6軸の言語化 → 第1候補・第2候補のボードタイプ、フィンセットアップと選定理由、推奨ボリューム(L)・長さ・幅・厚みのレンジ、使い分けの提案。
 
 ## 語彙の蒸留パイプライン(RAGではない)
@@ -96,6 +105,8 @@ src/surf_feel/
   volume.py      浮力・寸法のガードレール計算
   propose.py     提案文の生成(Claude API / テンプレート)
   cli.py         CLIエントリポイント
+  web.py         Webフォームサーバー(標準ライブラリのみ)
+  static/        フォームのHTML
 data/
   vocab_seed.json      シード語彙辞書
   vocab_distilled.json 蒸留パイプラインの出力(生成される)
@@ -110,5 +121,5 @@ distill/
 
 - [x] **Phase 1**: 蒸留パイプライン(字幕収集→バッチ抽出→JSON語彙辞書)
 - [x] **Phase 2**: 自由記述→フィール軸翻訳→辞書マッチング→提案生成の一気通貫CLI
-- [ ] **Phase 3**: コーパス拡張(Stab、Surfer's Journal、Swaylock's)+ 語彙数増加時の embedding / Chroma 導入
-- [ ] **Phase 4**: Webフォーム化(React)、条件別の使い分け提案の強化
+- [ ] **Phase 3**: コーパス拡張(Stab、Surfer's Journal、Swaylock's)+ 語彙数増加時の embedding / Chroma 導入(蒸留の実走には `ANTHROPIC_API_KEY` が必要)
+- [x] **Phase 4**: Webフォーム化(`surf-feel-web`)、第2候補・使い分け提案
