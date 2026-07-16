@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+.venv/
+venv/
+
+# 蒸留パイプラインの中間物(元ソースは破棄する設計)
+distill/raw/
+distill/chunks/
+distill/batch_results/
+.env
