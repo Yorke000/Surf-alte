@@ -7,9 +7,11 @@ RAGではない: 元テキストは辞書に入らない。抽出時に言い換
 +フィール軸スコア+ボード特性のみが残り、元ソースは --purge-raw で破棄できる。
 
 使い方:
+    python distill/distill.py estimate        # チャンク数と概算コストを表示(API不要)
     python distill/distill.py submit          # バッチ投入(batch_id が表示される)
     python distill/distill.py collect <batch_id>   # 結果回収→辞書へマージ
     python distill/distill.py collect <batch_id> --purge-raw  # 回収後に元ソースを破棄
+    python distill/distill.py run --sync      # バッチを使わず逐次実行(少量向け・即時)
 """
 
 from __future__ import annotations
@@ -71,6 +73,85 @@ def build_requests() -> list[Request]:
                 )
             )
     return requests
+
+
+# 概算用の価格 (USD per 1M tokens)。バッチAPIは50%オフ
+PRICES = {
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-sonnet-5": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def iter_chunks() -> list[tuple[str, str]]:
+    """(chunk_id, text) のリストを返す。"""
+    out: list[tuple[str, str]] = []
+    for txt in sorted(RAW_DIR.glob("*.txt")):
+        for i, chunk in enumerate(chunk_text(txt.read_text(encoding="utf-8"))):
+            out.append((f"{txt.stem}-{i:03d}", chunk))
+    return out
+
+
+def estimate() -> None:
+    """API を呼ばずにチャンク数・トークン量・コストの概算を表示する。"""
+    chunks = iter_chunks()
+    if not chunks:
+        print("distill/raw/ に .txt がありません。先に fetch_subtitles.py を実行してください。")
+        sys.exit(1)
+    # 英語テキストはおおむね 4 文字 ≈ 1 トークン
+    system_tokens = len(EXTRACT_SYSTEM) // 3  # 日本語プロンプトは文字あたり重め
+    in_tokens = sum(len(c) // 4 + system_tokens for _, c in chunks)
+    out_tokens = len(chunks) * 800  # 1チャンクあたりの抽出JSONの目安
+
+    files = len(set(cid.rsplit("-", 1)[0] for cid, _ in chunks))
+    print(f"ソース: {files} ファイル / {len(chunks)} チャンク")
+    print(f"概算トークン: 入力 ≈ {in_tokens:,} / 出力 ≈ {out_tokens:,}")
+    print()
+    print(f"{'モデル':<20} {'バッチ(50%オフ)':>16} {'逐次(通常価格)':>16}")
+    for model, (pin, pout) in PRICES.items():
+        full = (in_tokens * pin + out_tokens * pout) / 1e6
+        print(f"{model:<20} {'$%.2f' % (full / 2):>16} {'$%.2f' % full:>16}")
+    print(f"\n現在のモデル設定: {MODEL}(SURF_FEEL_MODEL で変更可)")
+
+
+def run_sync(purge_raw: bool = False) -> None:
+    """バッチAPIを使わず逐次実行する。少量チャンク向け(結果が即時に得られる)。"""
+    chunks = iter_chunks()
+    if not chunks:
+        print("distill/raw/ に .txt がありません。先に fetch_subtitles.py を実行してください。")
+        sys.exit(1)
+    client = anthropic.Anthropic()
+    new_entries: list[VocabEntry] = []
+    errors = 0
+    for n, (chunk_id, chunk) in enumerate(chunks, 1):
+        print(f"[{n}/{len(chunks)}] {chunk_id} ...", end=" ", flush=True)
+        try:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=4096,
+                system=EXTRACT_SYSTEM,
+                messages=[{"role": "user", "content": extract_user_prompt(chunk_id, chunk)}],
+                output_config={"format": {"type": "json_schema", "schema": EXTRACT_SCHEMA}},
+            )
+            text = next((b.text for b in response.content if b.type == "text"), "")
+            payload = json.loads(text)
+            got = 0
+            for e in payload.get("entries", []):
+                e.setdefault("source", chunk_id)
+                new_entries.append(VocabEntry(**e))
+                got += 1
+            print(f"{got} 語彙")
+        except Exception as exc:
+            print(f"失敗 ({type(exc).__name__})")
+            errors += 1
+    merge_into_dictionary(new_entries)
+    print(f"\n抽出 {len(new_entries)} 語彙 / エラー {errors} 件 → {DISTILLED_PATH}")
+    if purge_raw:
+        removed = 0
+        for f in RAW_DIR.glob("*"):
+            f.unlink()
+            removed += 1
+        print(f"元ソースを破棄しました({removed} ファイル)")
 
 
 def submit() -> None:
@@ -141,15 +222,23 @@ def merge_into_dictionary(new_entries: list[VocabEntry]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="フィール語彙の蒸留バッチ処理")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("estimate", help="チャンク数と概算コストを表示する(API不要)")
     sub.add_parser("submit", help="raw/*.txt をチャンク分割してバッチ投入する")
     p_collect = sub.add_parser("collect", help="バッチ結果を回収して辞書にマージする")
     p_collect.add_argument("batch_id")
     p_collect.add_argument("--purge-raw", action="store_true", help="回収後に元ソースを削除する")
     p_collect.add_argument("--no-wait", action="store_true", help="完了待ちをしない")
+    p_run = sub.add_parser("run", help="バッチを使わず逐次実行する(少量向け・即時)")
+    p_run.add_argument("--sync", action="store_true", help="(明示フラグ)逐次実行を確認する")
+    p_run.add_argument("--purge-raw", action="store_true", help="完了後に元ソースを削除する")
     args = parser.parse_args()
 
-    if args.command == "submit":
+    if args.command == "estimate":
+        estimate()
+    elif args.command == "submit":
         submit()
+    elif args.command == "run":
+        run_sync(purge_raw=args.purge_raw)
     else:
         collect(args.batch_id, purge_raw=args.purge_raw, wait=not args.no_wait)
     return 0

@@ -70,17 +70,23 @@ surf-feel-web --port 8000 --offline
 
 ```bash
 pip install yt-dlp
+export ANTHROPIC_API_KEY=sk-ant-...
 
 # 1. 字幕収集(例: Needessentials — Phase 1 の単一ソース検証)
 python distill/fetch_subtitles.py --channel "https://www.youtube.com/@needessentials" --limit 20
 
-# 2. チャンク分割 → Claude APIバッチ処理でフィール語彙を抽出
-python distill/distill.py submit
-# → batch_id が表示される
+# 2. 投入前にチャンク数と概算コストを確認(API不要)
+python distill/distill.py estimate
 
-# 3. 結果回収 → 辞書へマージ → 元ソース破棄
-python distill/distill.py collect <batch_id> --purge-raw
+# 3a. バッチ処理で抽出(50%オフ、完了まで最大1時間程度)
+python distill/distill.py submit
+python distill/distill.py collect <batch_id> --purge-raw   # 回収→辞書マージ→元ソース破棄
+
+# 3b. または少量なら逐次実行(通常価格、結果が即時)
+python distill/distill.py run --sync --purge-raw
 ```
+
+目安コスト: 動画20本(≈30チャンク)で Opus 4.8 バッチなら $0.5 前後、Sonnet 5 なら半額以下。`SURF_FEEL_MODEL=claude-sonnet-5` で抽出モデルを切り替えられる。
 
 蒸留された語彙は次回の `surf-feel` 実行から自動的にマッチング対象になる。
 
