@@ -2,7 +2,7 @@
 name = "surf-feel"
 version = "0.1.0"
 description = "言語化できないサーフィンのフィーリングを言語化し、それに合うボードを提案するアプリ"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "anthropic>=0.116.0",
     "pydantic>=2.0",
